@@ -19,3 +19,5 @@ coverage.xml
 *.log
 .git
 .DS_Store
+database.db
+*.db
