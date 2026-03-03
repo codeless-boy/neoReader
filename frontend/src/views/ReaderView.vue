@@ -4,6 +4,7 @@
       <el-button @click="$router.push('/')" :icon="Back" circle />
       <span class="book-title">{{ book?.title }}</span>
       <div class="settings">
+        <el-button @click="drawerVisible = true" :icon="List" circle style="margin-right: 10px" />
         <el-button-group>
           <el-button @click="fontSize = Math.max(12, fontSize - 2)" size="small">A-</el-button>
           <el-button @click="fontSize = Math.min(32, fontSize + 2)" size="small">A+</el-button>
@@ -28,14 +29,28 @@
         <span v-else class="end-text">--- 完 ---</span>
       </div>
     </div>
+
+    <el-drawer v-model="drawerVisible" title="目录" direction="ltr" size="300px">
+      <div v-if="chaptersLoading" class="loading">加载中...</div>
+      <div v-else class="chapter-list">
+        <div
+          v-for="chapter in chapters"
+          :key="chapter.id"
+          class="chapter-item"
+          @click="jumpToChapter(chapter)"
+        >
+          {{ chapter.title }}
+        </div>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive } from 'vue'
+import { ref, onMounted, reactive, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { getBook, getBookContent, type Book } from '../api/books'
-import { Back, Setting } from '@element-plus/icons-vue'
+import { getBook, getBookContent, getChapters, type Book, type Chapter } from '../api/books'
+import { Back, Setting, List } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
@@ -46,6 +61,12 @@ const loading = ref(false)
 const hasMore = ref(true)
 const currentOffset = ref(0)
 const chunkSize = 10000
+const contentArea = ref<HTMLElement | null>(null)
+
+// Chapters
+const drawerVisible = ref(false)
+const chapters = ref<Chapter[]>([])
+const chaptersLoading = ref(false)
 
 // Settings
 const fontSize = ref(18)
@@ -74,6 +95,18 @@ const loadBookInfo = async () => {
   }
 }
 
+const loadChapters = async () => {
+  chaptersLoading.value = true
+  try {
+    const res = await getChapters(bookId)
+    chapters.value = res.data
+  } catch (error) {
+    console.error('Failed to load chapters', error)
+  } finally {
+    chaptersLoading.value = false
+  }
+}
+
 const loadMore = async () => {
   if (loading.value || !hasMore.value) return
   loading.value = true
@@ -89,9 +122,39 @@ const loadMore = async () => {
   }
 }
 
+const jumpToChapter = async (chapter: Chapter) => {
+  drawerVisible.value = false
+  currentOffset.value = chapter.start_offset
+  content.value = '' // Clear current content
+  hasMore.value = true
+  await loadMore()
+  // Scroll to top
+  if (contentArea.value) {
+    contentArea.value.scrollTop = 0
+  }
+}
+
+// Watch for route changes to reload book if ID changes
+watch(() => route.params.id, (newId) => {
+  if (newId) {
+    // Reset state
+    book.value = undefined
+    content.value = ''
+    currentOffset.value = 0
+    hasMore.value = true
+    chapters.value = []
+    
+    // Reload
+    loadBookInfo()
+    loadMore()
+    loadChapters()
+  }
+})
+
 onMounted(() => {
   loadBookInfo()
   loadMore()
+  loadChapters()
 })
 </script>
 
@@ -142,6 +205,22 @@ onMounted(() => {
 
 .end-text {
   opacity: 0.6;
+}
+
+.chapter-list {
+  padding: 10px;
+}
+
+.chapter-item {
+  padding: 10px;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+  font-size: 14px;
+}
+
+.chapter-item:hover {
+  background-color: #f5f7fa;
+  color: #409eff;
 }
 
 @media (max-width: 768px) {

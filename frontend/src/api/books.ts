@@ -12,6 +12,15 @@ export interface Book {
   description?: string
 }
 
+export interface Chapter {
+  id: number
+  book_id: number
+  title: string
+  start_offset: number
+  end_offset?: number
+  ordering: number
+}
+
 export const getBooks = (skip = 0, limit = 100) => {
   return api.get<Book[]>('/books/', { params: { skip, limit } })
 }
@@ -39,4 +48,8 @@ export const getBookContent = (id: number, start = 0, limit = 10000) => {
     `/reader/${id}/content`,
     { params: { start, limit } }
   )
+}
+
+export const getChapters = (id: number) => {
+  return api.get<Chapter[]>(`/books/${id}/chapters`)
 }

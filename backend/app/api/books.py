@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlmodel import Session, select
 from typing import List
 from ..database import get_session
-from ..models import Book
+from ..models import Book, Chapter
 from ..utils.file_handler import save_upload_file, detect_encoding, delete_file
+from ..utils.chapter_parser import ChapterExtractor
 from pathlib import Path
 
 router = APIRouter()
@@ -38,6 +39,21 @@ async def upload_book(
     session.commit()
     session.refresh(book)
     
+    # Parse chapters
+    chapter_list = await ChapterExtractor.parse(file_path, encoding)
+    
+    # Save chapters to DB
+    for index, (title, start_offset) in enumerate(chapter_list):
+        chapter = Chapter(
+            book_id=book.id,
+            title=title,
+            start_offset=start_offset,
+            ordering=index
+        )
+        session.add(chapter)
+        
+    session.commit()
+    
     return book
 
 @router.get("/", response_model=List[Book])
@@ -68,3 +84,10 @@ def delete_book(book_id: int, session: Session = Depends(get_session)):
     session.delete(book)
     session.commit()
     return {"ok": True}
+
+@router.get("/{book_id}/chapters", response_model=List[Chapter])
+def get_chapters(book_id: int, session: Session = Depends(get_session)):
+    chapters = session.exec(
+        select(Chapter).where(Chapter.book_id == book_id).order_by(Chapter.ordering)
+    ).all()
+    return chapters
