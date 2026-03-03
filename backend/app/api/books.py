@@ -3,9 +3,10 @@ from sqlmodel import Session, select
 from typing import List
 from ..database import get_session
 from ..models import Book, Chapter
-from ..utils.file_handler import save_upload_file, detect_encoding, delete_file
+from ..utils.file_handler import save_upload_file, detect_encoding, delete_file, convert_to_utf8
 from ..utils.chapter_parser import ChapterExtractor
 from pathlib import Path
+import os
 
 router = APIRouter()
 
@@ -25,6 +26,15 @@ async def upload_book(
     
     # Detect encoding
     encoding = await detect_encoding(file_path)
+    
+    # Convert to UTF-8 if needed
+    try:
+        file_path = await convert_to_utf8(file_path, encoding)
+        encoding = 'utf-8'
+        file_size = os.path.getsize(file_path)
+    except Exception as e:
+        print(f"Conversion warning: {e}")
+        # Continue with original file if conversion fails
     
     # Create Book entry
     book = Book(
