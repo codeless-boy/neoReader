@@ -4,6 +4,9 @@ from ..database import get_session
 from ..models import Book
 import aiofiles
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -14,20 +17,23 @@ async def get_book_content(
     limit: int = Query(10000, le=100000), # Limit max 100KB per request
     session: Session = Depends(get_session)
 ):
+    logger.debug(f"读取书籍 {book_id} 内容: start={start}, limit={limit}")
     book = session.get(Book, book_id)
     if not book:
+        logger.warning(f"未找到书籍: {book_id}")
         raise HTTPException(status_code=404, detail="Book not found")
     
     if not os.path.exists(book.path):
+        logger.error(f"书籍 {book_id} 文件丢失: {book.path}")
         raise HTTPException(status_code=404, detail="File not found on server")
         
-    file_size = os.path.getsize(book.path)
-    if start >= file_size:
-        return {"content": "", "has_more": False, "total_size": file_size}
-        
-    encoding = book.encoding or 'utf-8'
-    
     try:
+        file_size = os.path.getsize(book.path)
+        if start >= file_size:
+            return {"content": "", "has_more": False, "total_size": file_size}
+            
+        encoding = book.encoding or 'utf-8'
+    
         async with aiofiles.open(book.path, 'rb') as f:
             await f.seek(start)
             chunk = await f.read(limit)
@@ -48,4 +54,5 @@ async def get_book_content(
             "encoding": encoding
         }
     except Exception as e:
+        logger.error(f"读取书籍 {book_id} 文件出错: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")

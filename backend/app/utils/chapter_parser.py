@@ -1,6 +1,9 @@
 import re
 import aiofiles
+import logging
 from typing import List, Tuple
+
+logger = logging.getLogger(__name__)
 
 # Pre-compiled regex for chapter matching
 # Matches:
@@ -21,6 +24,7 @@ class ChapterExtractor:
         Parse chapters from a TXT file.
         Returns a list of tuples: (title, start_offset)
         """
+        logger.debug(f"开始使用编码 {encoding} 正则解析 {file_path}")
         chapters = []
         
         # Always include a default start chapter
@@ -53,9 +57,11 @@ class ChapterExtractor:
                         chapters.append((title, current_offset))
                     
                     current_offset += line_len
+            
+            logger.info(f"正则解析完成。发现 {len(chapters)} 个章节。")
                     
         except Exception as e:
-            print(f"Error parsing chapters: {e}")
+            logger.error(f"解析章节出错: {e}", exc_info=True)
             # Even if parsing fails, we return at least the default chapter
             
         return chapters

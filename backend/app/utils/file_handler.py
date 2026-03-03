@@ -1,9 +1,12 @@
 import chardet
 import aiofiles
 import os
+import logging
 from fastapi import UploadFile
 from pathlib import Path
 import shutil
+
+logger = logging.getLogger(__name__)
 
 UPLOAD_DIR = Path("backend/static/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -14,8 +17,10 @@ async def detect_encoding(file_path: str) -> str:
         async with aiofiles.open(file_path, 'rb') as f:
             rawdata = await f.read(10000)  # Read more for better accuracy
         result = chardet.detect(rawdata)
+        logger.debug(f"检测到 {file_path} 的编码: {result['encoding']}")
         return result['encoding'] or 'utf-8'
-    except Exception:
+    except Exception as e:
+        logger.warning(f"检测 {file_path} 编码失败，默认为 utf-8: {e}")
         return 'utf-8'
 
 async def convert_to_utf8(file_path: str, original_encoding: str) -> str:
@@ -27,6 +32,7 @@ async def convert_to_utf8(file_path: str, original_encoding: str) -> str:
         return file_path
         
     try:
+        logger.info(f"正在将 {file_path} 从 {original_encoding} 转换为 utf-8")
         # Create a temporary file path
         temp_path = str(file_path) + ".utf8.tmp"
         
@@ -37,6 +43,7 @@ async def convert_to_utf8(file_path: str, original_encoding: str) -> str:
         try:
             content_str = content_bytes.decode(original_encoding)
         except UnicodeDecodeError:
+            logger.warning(f"使用 {original_encoding} 解码失败，尝试备用方案")
             # Fallback: try 'gb18030' for Chinese if original detection was 'gb2312' or 'gbk'
             if original_encoding.lower() in ['gb2312', 'gbk']:
                 content_str = content_bytes.decode('gb18030', errors='replace')
@@ -48,10 +55,11 @@ async def convert_to_utf8(file_path: str, original_encoding: str) -> str:
             
         # Replace original file with UTF-8 version
         os.replace(temp_path, file_path)
+        logger.info(f"成功将 {file_path} 转换为 utf-8")
         return file_path
         
     except Exception as e:
-        print(f"Error converting to UTF-8: {e}")
+        logger.error(f"转换为 UTF-8 出错: {e}", exc_info=True)
         if os.path.exists(temp_path):
             os.remove(temp_path)
         return file_path
