@@ -35,7 +35,7 @@
               <el-button
                 type="danger"
                 size="small"
-                icon="Delete"
+                :icon="Delete"
                 circle
                 @click.stop="handleDelete(book.id)"
               />
