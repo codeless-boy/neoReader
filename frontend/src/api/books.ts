@@ -1,5 +1,8 @@
 import api from './index'
 
+export type BookStatus = 'pending' | 'processing' | 'success' | 'failed'
+export type ProcessingStage = 'init' | 'encoding' | 'parsing' | 'completed'
+
 export interface Book {
   id: number
   title: string
@@ -10,6 +13,10 @@ export interface Book {
   added_at: string
   cover_path?: string
   description?: string
+  status: BookStatus
+  processing_stage: ProcessingStage
+  error_message?: string
+  failed_stage?: ProcessingStage
 }
 
 export interface Chapter {

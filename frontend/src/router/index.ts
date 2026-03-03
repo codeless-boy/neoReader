@@ -16,6 +16,11 @@ const router = createRouter({
           component: HomeView
         },
         {
+          path: 'uploads',
+          name: 'uploads',
+          component: () => import('../views/UploadsView.vue')
+        },
+        {
           path: 'settings',
           name: 'settings',
           component: () => import('../views/SettingsView.vue')

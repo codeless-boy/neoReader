@@ -15,6 +15,10 @@
           <el-icon><Notebook /></el-icon>
           <template #title>书籍管理</template>
         </el-menu-item>
+        <el-menu-item index="/uploads">
+          <el-icon><Upload /></el-icon>
+          <template #title>上传记录</template>
+        </el-menu-item>
         <el-menu-item index="/settings">
           <el-icon><Setting /></el-icon>
           <template #title>系统设置</template>
@@ -42,19 +46,21 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Notebook, Setting, Expand, Fold } from '@element-plus/icons-vue'
+import { Notebook, Setting, Expand, Fold, Upload } from '@element-plus/icons-vue'
 
 const isCollapse = ref(false)
 const route = useRoute()
 
 const activeMenu = computed(() => {
   if (route.path === '/settings') return '/settings'
+  if (route.path === '/uploads') return '/uploads'
   return '/'
 })
 
 const pageTitle = computed(() => {
   if (route.path === '/') return '书籍管理'
   if (route.path === '/settings') return '系统设置'
+  if (route.path === '/uploads') return '上传记录'
   return ''
 })
 
