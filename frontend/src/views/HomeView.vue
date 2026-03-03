@@ -31,7 +31,7 @@
           <div class="book-info">
             <div class="book-title">{{ book.title }}</div>
             <div class="book-meta">
-              <span>{{ (book.file_size / 1024).toFixed(1) }} KB</span>
+              <span>{{ formatFileSize(book.file_size) }}</span>
               <el-button
                 type="danger"
                 size="small"
@@ -98,6 +98,16 @@ const handleDelete = (id: number) => {
 
 const openBook = (id: number) => {
   router.push(`/read/${id}`)
+}
+
+const formatFileSize = (size: number) => {
+  if (size < 1024) {
+    return size + ' B'
+  } else if (size < 1024 * 1024) {
+    return (size / 1024).toFixed(1) + ' KB'
+  } else {
+    return (size / (1024 * 1024)).toFixed(1) + ' MB'
+  }
 }
 
 onMounted(fetchBooks)

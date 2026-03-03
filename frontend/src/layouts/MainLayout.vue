@@ -26,7 +26,7 @@
       <el-header class="header">
         <div class="header-left">
           <el-icon class="collapse-btn" @click="toggleCollapse">
-            <component :is="isCollapse ? 'Expand' : 'Fold'" />
+            <component :is="isCollapse ? Expand : Fold" />
           </el-icon>
           <span class="page-title">{{ pageTitle }}</span>
         </div>

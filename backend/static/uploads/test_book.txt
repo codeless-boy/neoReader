@@ -1,5 +1,0 @@
-This is a test book.
-It has some content.
-Line 3.
-Line 4.
-End of test book.
