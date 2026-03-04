@@ -1,69 +1,53 @@
 import logging
 import time
-import httpx
-import json
-from typing import Dict, Any, List, AsyncGenerator
+from typing import Dict, Any, AsyncGenerator
 from .base import BaseLLMService
+from langchain_community.chat_models import ChatZhipuAI
+from langchain_core.messages import HumanMessage
 
 logger = logging.getLogger("service.llm.glm")
 
 class GLMService(BaseLLMService):
-    API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-
     async def generate(self, model: str, api_key: str, prompt: str, temperature: float = 0.7) -> Dict[str, Any]:
         """
-        调用智谱 AI (GLM) API 生成文本。
+        调用智谱 AI (GLM) API 生成文本 (LangChain)。
         """
         start_time = time.time()
         
         # 1. 方法入口日志：记录入参（脱敏）
         masked_key = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "***"
-        logger.info(f"GLM服务调用开始: 模型={model}, APIKey={masked_key}, Temperature={temperature}")
-
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": temperature
-        }
+        logger.info(f"GLM服务调用开始(LangChain): 模型={model}, APIKey={masked_key}, Temperature={temperature}")
 
         try:
             # 2. 外部调用日志：记录请求动作
-            logger.info(f"发起外部请求: URL={self.API_URL}")
+            logger.info("初始化 LangChain ChatZhipuAI 客户端")
             
-            async with httpx.AsyncClient() as client:
-                req_start = time.time()
-                response = await client.post(self.API_URL, json=payload, headers=headers, timeout=60.0)
-                req_duration = (time.time() - req_start) * 1000
-                
-                # 记录外部调用结果
-                logger.info(f"外部请求完成: 状态码={response.status_code}, 耗时={req_duration:.2f}ms")
-                
-                if response.status_code != 200:
-                    error_msg = f"GLM API 调用失败: {response.text}"
-                    logger.error(error_msg)
-                    raise Exception(error_msg)
-                
-                data = response.json()
-                
-                content = data["choices"][0]["message"]["content"]
-                usage = data.get("usage", {})
-                
-                total_duration = (time.time() - start_time) * 1000
-                logger.info(f"GLM服务调用成功: 耗时={total_duration:.2f}ms")
-                
-                return {
-                    "content": content,
-                    "usage": usage,
-                    "provider": "glm",
-                    "model": model
-                }
+            chat = ChatZhipuAI(
+                api_key=api_key,
+                model=model,
+                temperature=temperature
+            )
+            
+            req_start = time.time()
+            response = await chat.ainvoke([HumanMessage(content=prompt)])
+            req_duration = (time.time() - req_start) * 1000
+            
+            # 记录外部调用结果
+            logger.info(f"LangChain 请求完成: 耗时={req_duration:.2f}ms")
+            
+            content = response.content
+            # LangChain response.response_metadata usually contains usage info
+            usage = response.response_metadata.get("token_usage", {})
+            
+            total_duration = (time.time() - start_time) * 1000
+            logger.info(f"GLM服务调用成功: 耗时={total_duration:.2f}ms")
+            
+            return {
+                "content": content,
+                "usage": usage,
+                "provider": "glm",
+                "model": model
+            }
                 
         except Exception as e:
             # 3. 异常捕获日志：记录完整堆栈
@@ -72,54 +56,27 @@ class GLMService(BaseLLMService):
 
     async def generate_stream(self, model: str, api_key: str, prompt: str, temperature: float = 0.7) -> AsyncGenerator[str, None]:
         """
-        流式调用智谱 AI (GLM) API。
+        流式调用智谱 AI (GLM) API (LangChain)。
         """
         start_time = time.time()
         masked_key = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "***"
-        logger.info(f"GLM流式服务调用开始: 模型={model}, APIKey={masked_key}, Temperature={temperature}")
-
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": temperature,
-            "stream": True
-        }
+        logger.info(f"GLM流式服务调用开始(LangChain): 模型={model}, APIKey={masked_key}, Temperature={temperature}")
 
         try:
-            logger.info(f"发起流式外部请求: URL={self.API_URL}")
+            logger.info("初始化 LangChain ChatZhipuAI 客户端 (Streaming)")
             
-            async with httpx.AsyncClient() as client:
-                async with client.stream("POST", self.API_URL, json=payload, headers=headers, timeout=60.0) as response:
-                    if response.status_code != 200:
-                        error_content = await response.aread()
-                        error_msg = f"GLM API 流式调用失败: {error_content.decode('utf-8')}"
-                        logger.error(error_msg)
-                        raise Exception(error_msg)
-                    
-                    logger.info("流式连接建立成功，开始接收数据")
-                    
-                    async for line in response.aiter_lines():
-                        if not line or not line.startswith("data: "):
-                            continue
-                        
-                        if line == "data: [DONE]":
-                            break
-                        
-                        try:
-                            chunk = json.loads(line[6:])
-                            content = chunk["choices"][0]["delta"].get("content", "")
-                            if content:
-                                yield content
-                        except json.JSONDecodeError:
-                            logger.warning(f"解析流式响应失败: {line}")
-                            continue
+            chat = ChatZhipuAI(
+                api_key=api_key,
+                model=model,
+                temperature=temperature,
+                streaming=True
+            )
+            
+            logger.info("开始接收 LangChain 流式数据")
+            
+            async for chunk in chat.astream([HumanMessage(content=prompt)]):
+                if chunk.content:
+                    yield chunk.content
                             
             total_duration = (time.time() - start_time) * 1000
             logger.info(f"GLM流式服务调用结束: 耗时={total_duration:.2f}ms")

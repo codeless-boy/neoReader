@@ -5,3 +5,6 @@ chardet
 python-multipart
 aiofiles
 httpx
+langchain
+langchain-community
+zhipuai
