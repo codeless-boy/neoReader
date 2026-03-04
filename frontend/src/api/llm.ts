@@ -8,7 +8,7 @@ export interface ChatMessage {
 export interface ChatRequest {
   provider: string
   model: string
-  api_key: string
+  config_key: string
   prompt: string
   temperature?: number
   stream?: boolean

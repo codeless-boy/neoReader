@@ -1,29 +1,41 @@
 import logging
 import time
 import json
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
+from sqlmodel import Session
 from ..schemas.llm import LLMRequest, LLMResponse
 from ..services.llm.factory import LLMFactory
+from ..database import get_session
+from ..models import SystemSetting
 
 router = APIRouter()
 logger = logging.getLogger("api.llm")
 
 @router.post("/chat", response_model=None)
-async def chat(request: LLMRequest):
+async def chat(request: LLMRequest, session: Session = Depends(get_session)):
     """
     LLM 对话接口。
     根据 provider 参数路由到不同的服务提供商。
     支持 stream=True 开启流式响应。
     """
     start_time = time.time()
-    masked_key = f"{request.api_key[:4]}...{request.api_key[-4:]}" if len(request.api_key) > 8 else "***"
     
     # 1. 方法入口日志
-    logger.info(f"收到 LLM 请求: Provider={request.provider}, Model={request.model}, APIKey={masked_key}, Stream={request.stream}")
+    logger.info(f"收到 LLM 请求: Provider={request.provider}, Model={request.model}, ConfigKey={request.config_key}, Stream={request.stream}")
     
     try:
-        # 2. 逻辑分叉：根据 provider 选择服务
+        # 2. 从数据库获取实际的 API Key
+        setting = session.get(SystemSetting, request.config_key)
+        if not setting or not setting.value:
+            logger.error(f"未找到 API 配置: {request.config_key}")
+            raise HTTPException(status_code=400, detail="未找到有效的 API 配置，请先在系统设置中配置")
+            
+        api_key = setting.value
+        masked_key = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "***"
+        logger.info(f"获取 API Key 成功: {masked_key}")
+
+        # 3. 逻辑分叉：根据 provider 选择服务
         logger.info(f"开始获取服务实例: {request.provider}")
         service = LLMFactory.get_service(request.provider)
         
@@ -35,7 +47,7 @@ async def chat(request: LLMRequest):
                 try:
                     async for chunk in service.generate_stream(
                         model=request.model,
-                        api_key=request.api_key,
+                        api_key=api_key,
                         prompt=request.prompt,
                         temperature=request.temperature
                     ):
@@ -52,11 +64,11 @@ async def chat(request: LLMRequest):
             return StreamingResponse(event_generator(), media_type="text/event-stream")
             
         else:
-            # 3. 外部调用：通过 service 调用 LLM (非流式)
+            # 4. 外部调用：通过 service 调用 LLM (非流式)
             logger.info("准备调用 Service 生成内容")
             result = await service.generate(
                 model=request.model,
-                api_key=request.api_key,
+                api_key=api_key,
                 prompt=request.prompt,
                 temperature=request.temperature
             )

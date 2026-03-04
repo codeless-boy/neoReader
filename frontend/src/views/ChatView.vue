@@ -127,7 +127,7 @@ const sendMessage = async () => {
       {
         provider: 'glm',
         model: modelName,
-        api_key: apiKey,
+        config_key: 'llm.provider.glm.api_key',
         prompt: content,
         temperature: 0.7
       },
