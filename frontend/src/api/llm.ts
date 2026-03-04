@@ -12,6 +12,7 @@ export interface ChatRequest {
   prompt: string
   temperature?: number
   stream?: boolean
+  session_id?: string
 }
 
 export interface ChatResponse {
@@ -23,6 +24,11 @@ export interface ChatResponse {
 
 export const sendChatMessage = async (data: ChatRequest): Promise<ChatResponse> => {
   const response = await api.post<ChatResponse>('/llm/chat', data)
+  return response.data
+}
+
+export const getChatHistory = async (sessionId: string): Promise<ChatMessage[]> => {
+  const response = await api.get<ChatMessage[]>(`/llm/chat/history/${sessionId}`)
   return response.data
 }
 

@@ -1,5 +1,9 @@
 <template>
   <div class="chat-container">
+    <div class="chat-header">
+      <span>AI 助手</span>
+      <el-button type="primary" size="small" @click="startNewChat">新会话</el-button>
+    </div>
     <div class="chat-messages" ref="messagesContainer">
       <div v-if="messages.length === 0" class="empty-state">
         <el-icon class="empty-icon"><ChatDotRound /></el-icon>
@@ -56,8 +60,9 @@
 import { ref, nextTick, onMounted, watch } from 'vue'
 import { User, Service, ChatDotRound } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { sendChatStream } from '../api/llm'
+import { sendChatStream, getChatHistory } from '../api/llm'
 import { getSettings } from '../api/settings'
+import { v4 as uuidv4 } from 'uuid'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -69,11 +74,41 @@ const inputMessage = ref('')
 const loading = ref(false)
 const messagesContainer = ref<HTMLElement | null>(null)
 const settings = ref<any>({})
+const sessionId = ref('')
 
 const scrollToBottom = async () => {
   await nextTick()
   if (messagesContainer.value) {
     messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+  }
+}
+
+const initSession = async () => {
+  const storedSessionId = localStorage.getItem('chat_session_id')
+  if (storedSessionId) {
+    sessionId.value = storedSessionId
+    await loadHistory()
+  } else {
+    startNewChat()
+  }
+}
+
+const startNewChat = () => {
+  const newSessionId = uuidv4()
+  sessionId.value = newSessionId
+  localStorage.setItem('chat_session_id', newSessionId)
+  messages.value = []
+}
+
+const loadHistory = async () => {
+  if (!sessionId.value) return
+  try {
+    const history = await getChatHistory(sessionId.value)
+    messages.value = history
+    await scrollToBottom()
+  } catch (error) {
+    console.error('Failed to load history:', error)
+    ElMessage.error('加载历史记录失败')
   }
 }
 
@@ -129,7 +164,8 @@ const sendMessage = async () => {
         model: modelName,
         config_key: 'llm.provider.glm.api_key',
         prompt: content,
-        temperature: 0.7
+        temperature: 0.7,
+        session_id: sessionId.value
       },
       (chunk) => {
         // Update AI message content
@@ -159,6 +195,7 @@ const sendMessage = async () => {
 
 onMounted(() => {
   loadConfig()
+  initSession()
 })
 </script>
 
@@ -282,6 +319,16 @@ onMounted(() => {
   padding: 20px;
   border-top: 1px solid #e6e6e6;
   background-color: #fff;
+}
+
+.chat-header {
+  padding: 15px 20px;
+  border-bottom: 1px solid #ebeef5;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 500;
+  color: #303133;
 }
 
 .input-wrapper {

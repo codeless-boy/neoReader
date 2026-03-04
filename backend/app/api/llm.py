@@ -4,6 +4,7 @@ import json
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session
+from langchain_community.chat_message_histories import SQLChatMessageHistory
 from ..schemas.llm import LLMRequest, LLMResponse
 from ..services.llm.factory import LLMFactory
 from ..database import get_session
@@ -11,6 +12,25 @@ from ..models import SystemSetting
 
 router = APIRouter()
 logger = logging.getLogger("api.llm")
+
+@router.get("/chat/history/{session_id}")
+async def get_chat_history(session_id: str):
+    """
+    获取指定会话的历史记录。
+    """
+    try:
+        history = SQLChatMessageHistory(
+            session_id=session_id,
+            connection_string="sqlite:///database.db"
+        )
+        messages = []
+        for msg in history.messages:
+            role = "user" if msg.type == "human" else "assistant"
+            messages.append({"role": role, "content": msg.content})
+        return messages
+    except Exception as e:
+        logger.error(f"获取聊天历史失败: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="获取聊天历史失败")
 
 @router.post("/chat", response_model=None)
 async def chat(request: LLMRequest, session: Session = Depends(get_session)):
@@ -39,11 +59,21 @@ async def chat(request: LLMRequest, session: Session = Depends(get_session)):
         logger.info(f"开始获取服务实例: {request.provider}")
         service = LLMFactory.get_service(request.provider)
         
+        # 初始化聊天历史
+        session_id = request.session_id or "default"
+        history = SQLChatMessageHistory(
+            session_id=session_id,
+            connection_string="sqlite:///database.db"
+        )
+        # 记录用户消息
+        history.add_user_message(request.prompt)
+        
         if request.stream:
             # 流式响应处理
             logger.info("准备调用 Service 生成流式内容")
             
             async def event_generator():
+                full_content = ""
                 try:
                     async for chunk in service.generate_stream(
                         model=request.model,
@@ -51,8 +81,12 @@ async def chat(request: LLMRequest, session: Session = Depends(get_session)):
                         prompt=request.prompt,
                         temperature=request.temperature
                     ):
+                        full_content += chunk
                         # 构造 SSE 格式数据
                         yield f"data: {json.dumps({'content': chunk, 'provider': request.provider, 'model': request.model}, ensure_ascii=False)}\n\n"
+                    
+                    # 记录 AI 回复
+                    history.add_ai_message(full_content)
                     
                     # 结束标记
                     yield "data: [DONE]\n\n"
@@ -72,6 +106,9 @@ async def chat(request: LLMRequest, session: Session = Depends(get_session)):
                 prompt=request.prompt,
                 temperature=request.temperature
             )
+            
+            # 记录 AI 回复
+            history.add_ai_message(result["content"])
             
             total_time = (time.time() - start_time) * 1000
             logger.info(f"LLM 请求处理成功: 耗时={total_time:.2f}ms")
