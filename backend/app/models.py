@@ -45,3 +45,14 @@ class Chapter(SQLModel, table=True):
 
     # Relationship
     book: Optional[Book] = Relationship(back_populates="chapters")
+
+class SystemSetting(SQLModel, table=True):
+    key: str = Field(primary_key=True)
+    category: str
+    group: str
+    label: str
+    value: str
+    field_type: str  # text, number, boolean, select, readonly
+    options: Optional[str] = None  # JSON string for select options
+    description: Optional[str] = None
+    sort_order: int = 0

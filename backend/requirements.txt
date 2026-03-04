@@ -4,3 +4,4 @@ uvicorn
 chardet
 python-multipart
 aiofiles
+httpx

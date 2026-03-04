@@ -23,6 +23,10 @@
           <el-icon><Setting /></el-icon>
           <template #title>系统设置</template>
         </el-menu-item>
+        <el-menu-item index="/chat">
+          <el-icon><ChatDotRound /></el-icon>
+          <template #title>AI 助手</template>
+        </el-menu-item>
       </el-menu>
     </el-aside>
     
@@ -46,7 +50,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Notebook, Setting, Expand, Fold, Upload } from '@element-plus/icons-vue'
+import { Notebook, Setting, Expand, Fold, Upload, ChatDotRound } from '@element-plus/icons-vue'
 
 const isCollapse = ref(false)
 const route = useRoute()
@@ -54,6 +58,7 @@ const route = useRoute()
 const activeMenu = computed(() => {
   if (route.path === '/settings') return '/settings'
   if (route.path === '/uploads') return '/uploads'
+  if (route.path === '/chat') return '/chat'
   return '/'
 })
 
@@ -61,6 +66,7 @@ const pageTitle = computed(() => {
   if (route.path === '/') return '书籍管理'
   if (route.path === '/settings') return '系统设置'
   if (route.path === '/uploads') return '上传记录'
+  if (route.path === '/chat') return 'AI 助手'
   return ''
 })
 
