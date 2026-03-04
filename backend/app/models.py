@@ -56,3 +56,9 @@ class SystemSetting(SQLModel, table=True):
     options: Optional[str] = None  # JSON string for select options
     description: Optional[str] = None
     sort_order: int = 0
+
+class MessageStore(SQLModel, table=True):
+    __tablename__ = "message_store"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    session_id: str
+    message: str

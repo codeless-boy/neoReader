@@ -1,55 +1,76 @@
 <template>
-  <div class="chat-container">
-    <div class="chat-header">
-      <span>AI 助手</span>
-      <el-button type="primary" size="small" @click="startNewChat">新会话</el-button>
+  <div class="chat-layout">
+    <!-- Sidebar -->
+    <div class="chat-sidebar">
+      <div class="sidebar-header">
+        <el-button type="primary" class="new-chat-btn" @click="startNewChat">
+          <el-icon><Plus /></el-icon> 新会话
+        </el-button>
+      </div>
+      <div class="session-list">
+        <div 
+          v-for="session in sessions" 
+          :key="session.id" 
+          class="session-item"
+          :class="{ active: session.id === sessionId }"
+          @click="switchSession(session.id)"
+        >
+          <div class="session-title">{{ session.title }}</div>
+          <el-icon class="delete-icon" @click.stop="handleDeleteSession(session.id)"><Delete /></el-icon>
+        </div>
+      </div>
     </div>
-    <div class="chat-messages" ref="messagesContainer">
-      <div v-if="messages.length === 0" class="empty-state">
-        <el-icon class="empty-icon"><ChatDotRound /></el-icon>
-        <p>有什么我可以帮你的吗？</p>
-      </div>
-      
-      <div 
-        v-for="(msg, index) in messages" 
-        :key="index" 
-        class="message-wrapper"
-        :class="{ 'user-message': msg.role === 'user', 'ai-message': msg.role === 'assistant' }"
-      >
-        <div class="avatar">
-          <el-icon v-if="msg.role === 'user'"><User /></el-icon>
-          <el-icon v-else><Service /></el-icon>
-        </div>
-        <div class="message-content">
-          <div class="message-bubble" v-if="msg.content || !loading || msg.role !== 'assistant'">
-            {{ msg.content }}
-          </div>
-          <div class="message-bubble loading-bubble" v-else>
-            <span class="dot">.</span>
-            <span class="dot">.</span>
-            <span class="dot">.</span>
-          </div>
-        </div>
-      </div>
-      
 
-    </div>
-    
-    <div class="chat-input-area">
-      <div class="input-wrapper">
-        <el-input
-          v-model="inputMessage"
-          type="textarea"
-          :rows="3"
-          placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
-          @keydown.enter.prevent="handleEnter"
-          resize="none"
-          :disabled="loading"
-        />
-        <div class="input-actions">
-          <el-button type="primary" :loading="loading" @click="sendMessage" :disabled="!inputMessage.trim()">
-            发送
-          </el-button>
+    <!-- Main Chat Area -->
+    <div class="chat-main">
+      <div class="chat-header">
+        <span>AI 助手</span>
+      </div>
+      <div class="chat-messages" ref="messagesContainer">
+        <div v-if="messages.length === 0" class="empty-state">
+          <el-icon class="empty-icon"><ChatDotRound /></el-icon>
+          <p>有什么我可以帮你的吗？</p>
+        </div>
+        
+        <div 
+          v-for="(msg, index) in messages" 
+          :key="index" 
+          class="message-wrapper"
+          :class="{ 'user-message': msg.role === 'user', 'ai-message': msg.role === 'assistant' }"
+        >
+          <div class="avatar">
+            <el-icon v-if="msg.role === 'user'"><User /></el-icon>
+            <el-icon v-else><Service /></el-icon>
+          </div>
+          <div class="message-content">
+            <div class="message-bubble" v-if="msg.content || !loading || msg.role !== 'assistant'">
+              {{ msg.content }}
+            </div>
+            <div class="message-bubble loading-bubble" v-else>
+              <span class="dot">.</span>
+              <span class="dot">.</span>
+              <span class="dot">.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="chat-input-area">
+        <div class="input-wrapper">
+          <el-input
+            v-model="inputMessage"
+            type="textarea"
+            :rows="3"
+            placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
+            @keydown.enter.prevent="handleEnter"
+            resize="none"
+            :disabled="loading"
+          />
+          <div class="input-actions">
+            <el-button type="primary" :loading="loading" @click="sendMessage" :disabled="!inputMessage.trim()">
+              发送
+            </el-button>
+          </div>
         </div>
       </div>
     </div>
@@ -58,9 +79,9 @@
 
 <script setup lang="ts">
 import { ref, nextTick, onMounted, watch } from 'vue'
-import { User, Service, ChatDotRound } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
-import { sendChatStream, getChatHistory } from '../api/llm'
+import { User, Service, ChatDotRound, Plus, Delete } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { sendChatStream, getChatHistory, getChatSessions, deleteChatSession } from '../api/llm'
 import { getSettings } from '../api/settings'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -69,7 +90,13 @@ interface Message {
   content: string
 }
 
+interface Session {
+  id: string
+  title: string
+}
+
 const messages = ref<Message[]>([])
+const sessions = ref<Session[]>([])
 const inputMessage = ref('')
 const loading = ref(false)
 const messagesContainer = ref<HTMLElement | null>(null)
@@ -83,21 +110,75 @@ const scrollToBottom = async () => {
   }
 }
 
+const loadSessions = async () => {
+  try {
+    sessions.value = await getChatSessions()
+  } catch (error) {
+    console.error('Failed to load sessions:', error)
+  }
+}
+
 const initSession = async () => {
+  await loadSessions()
   const storedSessionId = localStorage.getItem('chat_session_id')
-  if (storedSessionId) {
+  
+  if (storedSessionId && sessions.value.some(s => s.id === storedSessionId)) {
     sessionId.value = storedSessionId
+    await loadHistory()
+  } else if (sessions.value.length > 0) {
+    // Default to the most recent session (assuming API returns in some order, or just first)
+    // Actually, usually we might want to start a new chat or pick the first one.
+    // Let's pick the first one for now if exists.
+    sessionId.value = sessions.value[0].id
+    localStorage.setItem('chat_session_id', sessionId.value)
     await loadHistory()
   } else {
     startNewChat()
   }
 }
 
-const startNewChat = () => {
+const switchSession = async (id: string) => {
+  if (sessionId.value === id) return
+  sessionId.value = id
+  localStorage.setItem('chat_session_id', id)
+  await loadHistory()
+}
+
+const startNewChat = async () => {
   const newSessionId = uuidv4()
   sessionId.value = newSessionId
   localStorage.setItem('chat_session_id', newSessionId)
   messages.value = []
+  // Optionally add to sessions list immediately or wait until first message?
+  // Let's wait until first message or just refresh list later.
+  // Actually better to just clear messages. The session won't appear in list until saved in DB.
+}
+
+const handleDeleteSession = async (id: string) => {
+  try {
+    await ElMessageBox.confirm('确定要删除该会话吗？', '提示', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消'
+    })
+    
+    await deleteChatSession(id)
+    ElMessage.success('会话已删除')
+    await loadSessions()
+    
+    if (sessionId.value === id) {
+      if (sessions.value.length > 0) {
+        await switchSession(sessions.value[0].id)
+      } else {
+        startNewChat()
+      }
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('Failed to delete session:', error)
+      ElMessage.error('删除失败')
+    }
+  }
 }
 
 const loadHistory = async () => {
@@ -180,6 +261,8 @@ const sendMessage = async () => {
         }
       }
     )
+    // Refresh session list to show new session title if it was new
+    loadSessions()
   } catch (error: any) {
     console.error('Chat error:', error)
     const errorMsg = error.message || '发送失败，请稍后重试'
@@ -200,14 +283,103 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.chat-container {
+.chat-layout {
   display: flex;
-  flex-direction: column;
-  height: calc(100vh - 100px); /* Adjust based on header height */
+  height: calc(100vh - 100px);
   background-color: #fff;
   border-radius: 8px;
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
   overflow: hidden;
+}
+
+.chat-sidebar {
+  width: 260px;
+  border-right: 1px solid #ebeef5;
+  display: flex;
+  flex-direction: column;
+  background-color: #f9fafe;
+}
+
+.sidebar-header {
+  padding: 15px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.new-chat-btn {
+  width: 100%;
+}
+
+.session-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.session-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-bottom: 4px;
+  color: #606266;
+  transition: background-color 0.2s;
+}
+
+.session-item:hover {
+  background-color: #e6e8eb;
+}
+
+.session-item.active {
+  background-color: #ecf5ff;
+  color: #409eff;
+}
+
+.session-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.delete-icon {
+  margin-left: 8px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  color: #909399;
+}
+
+.session-item:hover .delete-icon {
+  opacity: 1;
+}
+
+.delete-icon:hover {
+  color: #f56c6c;
+}
+
+.chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0; /* Prevent flex child from overflowing */
+}
+
+.chat-container {
+  /* Legacy class kept just in case, but structure changed */
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.chat-header {
+  padding: 15px 20px;
+  border-bottom: 1px solid #ebeef5;
+  font-weight: 500;
+  color: #303133;
+  height: 50px;
+  box-sizing: border-box;
 }
 
 .chat-messages {
@@ -274,6 +446,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0; /* Allow text truncate inside if needed */
 }
 
 .message-bubble {
@@ -319,16 +492,6 @@ onMounted(() => {
   padding: 20px;
   border-top: 1px solid #e6e6e6;
   background-color: #fff;
-}
-
-.chat-header {
-  padding: 15px 20px;
-  border-bottom: 1px solid #ebeef5;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-weight: 500;
-  color: #303133;
 }
 
 .input-wrapper {

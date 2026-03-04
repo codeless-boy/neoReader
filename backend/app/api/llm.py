@@ -3,15 +3,80 @@ import time
 import json
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
-from sqlmodel import Session
+from sqlmodel import Session, select
 from langchain_community.chat_message_histories import SQLChatMessageHistory
 from ..schemas.llm import LLMRequest, LLMResponse
 from ..services.llm.factory import LLMFactory
 from ..database import get_session
-from ..models import SystemSetting
+from ..models import SystemSetting, MessageStore
 
 router = APIRouter()
 logger = logging.getLogger("api.llm")
+
+@router.get("/chat/sessions")
+async def get_chat_sessions(session: Session = Depends(get_session)):
+    """
+    获取所有历史会话列表。
+    """
+    try:
+        # 获取所有不重复的 session_id
+        statement = select(MessageStore.session_id).distinct()
+        session_ids = session.exec(statement).all()
+        
+        sessions = []
+        for sid in session_ids:
+            # 获取该 session 的第一条消息作为标题
+            msg_stmt = select(MessageStore).where(MessageStore.session_id == sid).order_by(MessageStore.id).limit(1)
+            first_msg = session.exec(msg_stmt).first()
+            
+            title = "新会话"
+            if first_msg:
+                try:
+                    # LangChain SQLChatMessageHistory 存储的是 JSON 字符串
+                    # 格式通常是: {"type": "human", "data": {"content": "..."}}
+                    msg_data = json.loads(first_msg.message)
+                    
+                    # 尝试从 data.content 获取
+                    content = ""
+                    if isinstance(msg_data, dict):
+                        if "data" in msg_data and isinstance(msg_data["data"], dict):
+                             content = msg_data["data"].get("content", "")
+                        elif "content" in msg_data:
+                             content = msg_data.get("content", "")
+                    
+                    if content:
+                        title = content[:20] + "..." if len(content) > 20 else content
+                except Exception as e:
+                    logger.warning(f"解析消息内容失败: {str(e)}")
+                    pass
+            
+            sessions.append({
+                "id": sid,
+                "title": title
+            })
+            
+        return sessions
+    except Exception as e:
+        logger.error(f"获取会话列表失败: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="获取会话列表失败")
+
+@router.delete("/chat/sessions/{session_id}")
+async def delete_chat_session(session_id: str, session: Session = Depends(get_session)):
+    """
+    删除指定会话的所有历史记录。
+    """
+    try:
+        statement = select(MessageStore).where(MessageStore.session_id == session_id)
+        results = session.exec(statement).all()
+        
+        for row in results:
+            session.delete(row)
+            
+        session.commit()
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"删除会话失败: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="删除会话失败")
 
 @router.get("/chat/history/{session_id}")
 async def get_chat_history(session_id: str):

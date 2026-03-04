@@ -32,6 +32,15 @@ export const getChatHistory = async (sessionId: string): Promise<ChatMessage[]> 
   return response.data
 }
 
+export const getChatSessions = async (): Promise<{ id: string, title: string }[]> => {
+  const response = await api.get<{ id: string, title: string }[]>('/llm/chat/sessions')
+  return response.data
+}
+
+export const deleteChatSession = async (sessionId: string): Promise<void> => {
+  await api.delete(`/llm/chat/sessions/${sessionId}`)
+}
+
 export const sendChatStream = async (
   data: ChatRequest, 
   onChunk: (chunk: string) => void,
