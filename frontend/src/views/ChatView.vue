@@ -17,24 +17,18 @@
           <el-icon v-else><Service /></el-icon>
         </div>
         <div class="message-content">
-          <div class="message-bubble">
+          <div class="message-bubble" v-if="msg.content || !loading || msg.role !== 'assistant'">
             {{ msg.content }}
+          </div>
+          <div class="message-bubble loading-bubble" v-else>
+            <span class="dot">.</span>
+            <span class="dot">.</span>
+            <span class="dot">.</span>
           </div>
         </div>
       </div>
       
-      <div v-if="loading" class="message-wrapper ai-message">
-        <div class="avatar">
-          <el-icon><Service /></el-icon>
-        </div>
-        <div class="message-content">
-          <div class="message-bubble loading-bubble">
-            <span class="dot">.</span>
-            <span class="dot">.</span>
-            <span class="dot">.</span>
-          </div>
-        </div>
-      </div>
+
     </div>
     
     <div class="chat-input-area">
@@ -62,7 +56,7 @@
 import { ref, nextTick, onMounted, watch } from 'vue'
 import { User, Service, ChatDotRound } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { sendChatMessage } from '../api/llm'
+import { sendChatStream } from '../api/llm'
 import { getSettings } from '../api/settings'
 
 interface Message {
@@ -125,21 +119,38 @@ const sendMessage = async () => {
   loading.value = true
   await scrollToBottom()
   
+  // Prepare AI message placeholder
+  const aiMessageIndex = messages.value.push({ role: 'assistant', content: '' }) - 1
+  
   try {
-    const response = await sendChatMessage({
-      provider: 'glm',
-      model: modelName,
-      api_key: apiKey,
-      prompt: content,
-      temperature: 0.7
-    })
-    
-    messages.value.push({ role: 'assistant', content: response.content })
+    await sendChatStream(
+      {
+        provider: 'glm',
+        model: modelName,
+        api_key: apiKey,
+        prompt: content,
+        temperature: 0.7
+      },
+      (chunk) => {
+        // Update AI message content
+        messages.value[aiMessageIndex].content += chunk
+        scrollToBottom()
+      },
+      (error) => {
+        console.error('Chat stream error:', error)
+        ElMessage.error(error || '生成失败，请稍后重试')
+        if (!messages.value[aiMessageIndex].content) {
+          messages.value[aiMessageIndex].content = `[错误] ${error}`
+        }
+      }
+    )
   } catch (error: any) {
     console.error('Chat error:', error)
-    const errorMsg = error.response?.data?.detail || '发送失败，请稍后重试'
+    const errorMsg = error.message || '发送失败，请稍后重试'
     ElMessage.error(errorMsg)
-    messages.value.push({ role: 'assistant', content: `[系统错误] ${errorMsg}` })
+    if (!messages.value[aiMessageIndex].content) {
+      messages.value[aiMessageIndex].content = `[系统错误] ${errorMsg}`
+    }
   } finally {
     loading.value = false
     await scrollToBottom()
