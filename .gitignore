@@ -1,6 +1,7 @@
 venv/
 .trae/
 backend/static/uploads/
+backend/backend/static/uploads/
 __pycache__/
 *.pyc
 *.pyo
