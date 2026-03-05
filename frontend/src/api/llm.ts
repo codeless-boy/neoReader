@@ -13,6 +13,7 @@ export interface ChatRequest {
   temperature?: number
   stream?: boolean
   session_id?: string
+  book_id?: number
 }
 
 export interface ChatResponse {

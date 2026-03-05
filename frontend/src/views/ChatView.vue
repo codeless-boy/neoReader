@@ -25,6 +25,20 @@
     <div class="chat-main">
       <div class="chat-header">
         <span>AI 助手</span>
+        <el-select 
+          v-model="selectedBookId" 
+          placeholder="选择书籍进行对话" 
+          clearable 
+          style="width: 240px; margin-left: 20px;" 
+          size="small"
+        >
+          <el-option
+            v-for="book in books"
+            :key="book.id"
+            :label="book.title"
+            :value="book.id"
+          />
+        </el-select>
       </div>
       <div class="chat-messages" ref="messagesContainer">
         <div v-if="messages.length === 0" class="empty-state">
@@ -83,6 +97,7 @@ import { User, Service, ChatDotRound, Plus, Delete } from '@element-plus/icons-v
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { sendChatStream, getChatHistory, getChatSessions, deleteChatSession } from '../api/llm'
 import { getSettings } from '../api/settings'
+import { getBooks, type Book } from '../api/books'
 import { v4 as uuidv4 } from 'uuid'
 
 interface Message {
@@ -102,11 +117,22 @@ const loading = ref(false)
 const messagesContainer = ref<HTMLElement | null>(null)
 const settings = ref<any>({})
 const sessionId = ref('')
+const books = ref<Book[]>([])
+const selectedBookId = ref<number | undefined>(undefined)
 
 const scrollToBottom = async () => {
   await nextTick()
   if (messagesContainer.value) {
     messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+  }
+}
+
+const loadBooks = async () => {
+  try {
+    const res = await getBooks()
+    books.value = res.data
+  } catch (error) {
+    console.error('Failed to load books:', error)
   }
 }
 
@@ -246,7 +272,8 @@ const sendMessage = async () => {
         config_key: 'llm.provider.glm.api_key',
         prompt: content,
         temperature: 0.7,
-        session_id: sessionId.value
+        session_id: sessionId.value,
+        book_id: selectedBookId.value
       },
       (chunk) => {
         // Update AI message content
@@ -279,6 +306,7 @@ const sendMessage = async () => {
 onMounted(() => {
   loadConfig()
   initSession()
+  loadBooks()
 })
 </script>
 

@@ -1,6 +1,7 @@
 import logging
 import time
 import json
+import aiofiles
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
@@ -8,7 +9,7 @@ from langchain_community.chat_message_histories import SQLChatMessageHistory
 from ..schemas.llm import LLMRequest, LLMResponse
 from ..services.llm.factory import LLMFactory
 from ..database import get_session
-from ..models import SystemSetting, MessageStore
+from ..models import SystemSetting, MessageStore, Book
 
 router = APIRouter()
 logger = logging.getLogger("api.llm")
@@ -124,13 +125,49 @@ async def chat(request: LLMRequest, session: Session = Depends(get_session)):
         logger.info(f"开始获取服务实例: {request.provider}")
         service = LLMFactory.get_service(request.provider)
         
+        # 处理书籍上下文
+        prompt_for_llm = request.prompt
+        if request.book_id:
+            logger.info(f"关联书籍ID: {request.book_id}")
+            book = session.get(Book, request.book_id)
+            if book:
+                if book.status != "success": # Check if book is ready
+                    logger.warning(f"书籍 {book.id} 状态不为 success: {book.status}")
+                    # Optionally notify user or just proceed without book context?
+                    # Proceeding without book context seems safer to avoid error
+                else:
+                    try:
+                        # 使用书籍的编码读取，默认 utf-8
+                        encoding = book.encoding or 'utf-8'
+                        # 限制读取前 10000 字符 (约 5000-8000 tokens)，避免请求体过大导致 SSEError
+                        limit_chars = 10000 
+                        async with aiofiles.open(book.path, mode='r', encoding=encoding, errors='replace') as f:
+                            content = await f.read(limit_chars)
+                            
+                        system_prompt = f"""你是一个精通书籍《{book.title}》的 AI 助手。
+以下是该书籍的部分内容（如果内容过长已被截断）：
+
+\"\"\"
+{content}
+\"\"\"
+
+请根据上述内容回答用户的问题。如果问题超出了提供的内容范围，请诚实告知。
+
+用户问题：{request.prompt}"""
+                        prompt_for_llm = system_prompt
+                        logger.info(f"已构建包含书籍内容的 Prompt (长度: {len(prompt_for_llm)})")
+                    except Exception as e:
+                        logger.error(f"读取书籍内容失败: {str(e)}", exc_info=True)
+            else:
+                logger.warning(f"未找到书籍 ID: {request.book_id}")
+
         # 初始化聊天历史
         session_id = request.session_id or "default"
         history = SQLChatMessageHistory(
             session_id=session_id,
             connection_string="sqlite:///database.db"
         )
-        # 记录用户消息
+        # 记录用户消息（使用原始 Prompt）
         history.add_user_message(request.prompt)
         
         if request.stream:
@@ -143,7 +180,7 @@ async def chat(request: LLMRequest, session: Session = Depends(get_session)):
                     async for chunk in service.generate_stream(
                         model=request.model,
                         api_key=api_key,
-                        prompt=request.prompt,
+                        prompt=prompt_for_llm,
                         temperature=request.temperature
                     ):
                         full_content += chunk
@@ -168,7 +205,7 @@ async def chat(request: LLMRequest, session: Session = Depends(get_session)):
             result = await service.generate(
                 model=request.model,
                 api_key=api_key,
-                prompt=request.prompt,
+                prompt=prompt_for_llm,
                 temperature=request.temperature
             )
             

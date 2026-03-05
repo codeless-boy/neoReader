@@ -9,6 +9,7 @@ class LLMRequest(BaseModel):
     temperature: float = Field(0.7, description="采样温度，控制输出的随机性")
     stream: bool = Field(False, description="是否开启流式输出")
     session_id: Optional[str] = Field(None, description="会话 ID")
+    book_id: Optional[int] = Field(None, description="关联的书籍ID")
 
 class LLMResponse(BaseModel):
     content: str = Field(..., description="生成的文本内容")
